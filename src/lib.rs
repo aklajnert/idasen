@@ -2,12 +2,17 @@ extern crate btleplug;
 
 use btleplug::api::{Central, Characteristic, Peripheral, UUID};
 #[cfg(target_os = "linux")]
-use btleplug::bluez::{adapter::ConnectedAdapter, manager::Manager};
+use btleplug::bluez::{
+    adapter::ConnectedAdapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
+};
 #[cfg(target_os = "macos")]
-use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
+use btleplug::corebluetooth::{
+    adapter::Adapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
+};
 #[cfg(target_os = "windows")]
-use btleplug::winrtble::{adapter::Adapter, manager::Manager};
-use std::collections::HashMap;
+use btleplug::winrtble::{
+    adapter::Adapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
+};
 use std::thread;
 use std::time::Duration;
 
@@ -26,6 +31,12 @@ fn get_central(manager: &Manager) -> ConnectedAdapter {
     let adapter = adapters.into_iter().nth(0).unwrap();
     adapter.connect().unwrap()
 }
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+type BtCentral = Adapter;
+
+#[cfg(target_os = "linux")]
+type BtCentral = ConnectedAdapter;
 
 const CONTROL_UUID: UUID = UUID::B128([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x02, 0x00, 0xfa, 0x99,
@@ -58,67 +69,71 @@ pub fn bytes_to_meters(bytes: &[u8]) -> f32 {
     (as_int as f32 / 10000.0) + MIN_HEIGHT
 }
 
-pub fn main() -> Vec<Characteristic> {
-    let manager = Manager::new().unwrap();
+pub struct Idasen {
+    manager: Manager,
+    central: BtCentral,
+    desk: PeripheralStruct,
+    control_characteristic: Characteristic,
+    status_characteristic: Characteristic,
+}
 
-    // get the first bluetooth adapter
-    //
-    // connect to the adapter
-    let central = get_central(&manager);
+impl Idasen {
+    pub fn new() -> Self {
+        let manager = Manager::new().unwrap();
+        let central = get_central(&manager);
+        central.start_scan().unwrap();
 
-    // start scanning for devices
-    central.start_scan().unwrap();
-    // instead of waiting, you can use central.event_receiver() to fetch a channel and
-    // be notified of new devices
-    thread::sleep(Duration::from_secs(2));
+        thread::sleep(Duration::from_secs(2));
 
-    // find the device we're interested in
-    let desk = central
-        .peripherals()
-        .into_iter()
-        .find(|p| {
-            p.properties()
-                .local_name
-                .iter()
-                .any(|name| name.contains("Desk"))
-        })
-        .unwrap();
-    println!("{:?}", desk);
+        let desk = central
+            .peripherals()
+            .into_iter()
+            .find(|p| {
+                p.properties()
+                    .local_name
+                    .iter()
+                    .any(|name| name.contains("Desk"))
+            })
+            .unwrap();
+        desk.connect().unwrap();
 
-    // connect to the device
-    desk.connect().unwrap();
+        let characteristics = desk.discover_characteristics().unwrap();
+        let control_characteristic = characteristics
+            .iter()
+            .find(|characteristic| characteristic.uuid == CONTROL_UUID)
+            .unwrap()
+            .clone();
+        let status_characteristic = characteristics
+            .iter()
+            .find(|characteristics| characteristics.uuid == STATUS_UUID)
+            .unwrap()
+            .clone();
 
-    // discover characteristics
-    let characteristics = desk.discover_characteristics().unwrap();
-    let control_characteristic = characteristics
-        .iter()
-        .find(|characteristic| characteristic.uuid == CONTROL_UUID)
-        .unwrap();
-    let status_characteristic = characteristics
-        .iter()
-        .find(|characteristics| characteristics.uuid == STATUS_UUID)
-        .unwrap();
-
-    println!("{:?}", desk.command(&control_characteristic, &UP));
-    println!("{:?}", desk.command(&control_characteristic, &STOP));
-    thread::sleep(Duration::from_secs(1));
-    println!("{:?}", desk.command(&control_characteristic, &DOWN));
-    println!("{:?}", desk.command(&control_characteristic, &STOP));
-
-    for (bytes, value) in test_values {
-        println!(
-            "{:?} = {}, expected: {}",
-            bytes,
-            bytes_to_meters(&bytes),
-            value
-        );
+        Self {
+            manager,
+            central,
+            desk,
+            control_characteristic,
+            status_characteristic,
+        }
     }
 
-    loop {
-        let response = desk.read_by_type(&status_characteristic, status_characteristic.uuid);
-        println!("H: {:?}", bytes_to_meters(&response.unwrap()));
-        thread::sleep(Duration::from_secs(1));
+    pub fn up(&self) {
+        self.desk.command(&self.control_characteristic, &UP);
     }
 
-    characteristics
+    pub fn down(&self) {
+        self.desk.command(&self.control_characteristic, &DOWN);
+    }
+
+    pub fn stop(&self) {
+        self.desk.command(&self.control_characteristic, &STOP);
+    }
+
+    pub fn height(&self) -> f32 {
+        let response = self
+            .desk
+            .read_by_type(&self.status_characteristic, self.status_characteristic.uuid);
+        bytes_to_meters(&response.unwrap())
+    }
 }
