@@ -1,6 +1,9 @@
 extern crate btleplug;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 
-use btleplug::api::{Central, Characteristic, Peripheral, UUID};
+use btleplug::api::{BDAddr, Central, Characteristic, Peripheral, UUID};
 #[cfg(target_os = "linux")]
 use btleplug::bluez::{
     adapter::ConnectedAdapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
@@ -63,52 +66,89 @@ pub fn bytes_to_tenth_milimeters(bytes: &[u8]) -> i16 {
 }
 
 pub struct Idasen {
+    pub mac_addr: BDAddr,
     desk: PeripheralStruct,
     control_characteristic: Characteristic,
     position_characteristic: Characteristic,
 }
 
+#[derive(Debug, Fail)]
 pub enum Error {
+    #[fail(display = "Cannot find the device.")]
+    CannotFindDevice,
+
+    #[fail(display = "Cannot connect to the device.")]
+    ConnectionFailed,
+
+    #[fail(display = "Bluetooth characteristics not found: '{}'.", characteristic)]
+    CharacteristicsNotFound { characteristic: String },
+
+    #[fail(display = "Desired position has to be between MIN_HEIGHT and MAX_HEIGHT.")]
     PositionNotInRange,
 }
 
 impl Idasen {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, Error> {
         let manager = Manager::new().unwrap();
         let central = get_central(&manager);
         central.start_scan().unwrap();
 
-        thread::sleep(Duration::from_secs(2));
+        let desk = Idasen::find_desk(central);
+        if desk.is_none() {
+            return Err(Error::CannotFindDevice);
+        }
+        let desk = desk.unwrap();
+        if desk.connect().is_err() {
+            return Err(Error::ConnectionFailed);
+        }
+        let mac_addr = desk.address();
 
-        let desk = central
-            .peripherals()
-            .into_iter()
-            .find(|p| {
+        let characteristics = desk.discover_characteristics().unwrap();
+
+        let control_characteristic = characteristics
+            .iter()
+            .find(|characteristic| characteristic.uuid == CONTROL_UUID);
+        if control_characteristic.is_none() {
+            return Err(Error::CharacteristicsNotFound {
+                characteristic: "Control".to_string(),
+            });
+        }
+        let control_characteristic = control_characteristic.unwrap().clone();
+
+        let position_characteristic = characteristics
+            .iter()
+            .find(|characteristics| characteristics.uuid == POSITION_UUID);
+        if position_characteristic.is_none() {
+            return Err(Error::CharacteristicsNotFound {
+                characteristic: "Control".to_string(),
+            });
+        }
+        let position_characteristic = position_characteristic.unwrap().clone();
+
+        Ok(Self {
+            desk,
+            mac_addr,
+            control_characteristic,
+            position_characteristic,
+        })
+    }
+
+    fn find_desk(central: Adapter) -> Option<PeripheralStruct> {
+        let mut attempt = 0;
+        while attempt < 120 {
+            let desk = central.peripherals().into_iter().find(|p| {
                 p.properties()
                     .local_name
                     .iter()
                     .any(|name| name.contains("Desk"))
-            })
-            .unwrap();
-        desk.connect().unwrap();
-
-        let characteristics = desk.discover_characteristics().unwrap();
-        let control_characteristic = characteristics
-            .iter()
-            .find(|characteristic| characteristic.uuid == CONTROL_UUID)
-            .unwrap()
-            .clone();
-        let position_characteristic = characteristics
-            .iter()
-            .find(|characteristics| characteristics.uuid == POSITION_UUID)
-            .unwrap()
-            .clone();
-
-        Self {
-            desk,
-            control_characteristic,
-            position_characteristic,
+            });
+            if desk.is_some() {
+                return desk;
+            }
+            attempt += 1;
+            thread::sleep(Duration::from_millis(50));
         }
+        None
     }
 
     /// Move desk up.
