@@ -3,7 +3,7 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 
-use btleplug::api::{BDAddr, Central, Characteristic, Peripheral, UUID};
+use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, Peripheral, UUID};
 #[cfg(target_os = "linux")]
 use btleplug::bluez::{
     adapter::ConnectedAdapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
@@ -91,17 +91,36 @@ pub enum Error {
 
     #[fail(display = "Cannot read position.")]
     CannotReadPosition,
+
+    #[fail(display = "Failed to parse mac address.")]
+    MacAddrParseFailed(ParseBDAddrError),
 }
 
 impl Idasen {
+    /// Default constructor, discovers the desk by it's name.
     pub fn new() -> Result<Self, Error> {
+        Self::get_desk(None)
+    }
+
+    /// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
+    /// The address can be obtained also by accessing `mac_addr` property
+    /// on instantiated `Idasen` instance.
+    pub fn by_addr(mac: &str) -> Result<Self, Error> {
+        let addr = mac.parse::<BDAddr>();
+        match addr {
+            Ok(addr) => Self::get_desk(Some(addr)),
+            Err(err) => Err(Error::MacAddrParseFailed(err)),
+        }
+    }
+
+    fn get_desk(mac: Option<BDAddr>) -> Result<Self, Error> {
         let manager = Manager::new().unwrap();
         let central = get_central(&manager);
         if central.start_scan().is_err() {
             return Err(Error::ScanFailed);
         };
 
-        let desk = Idasen::find_desk(central);
+        let desk = Idasen::find_desk(central, mac);
         if desk.is_none() {
             return Err(Error::CannotFindDevice);
         }
@@ -141,14 +160,16 @@ impl Idasen {
         })
     }
 
-    fn find_desk(central: Adapter) -> Option<PeripheralStruct> {
+    fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<PeripheralStruct> {
         let mut attempt = 0;
         while attempt < 120 {
-            let desk = central.peripherals().into_iter().find(|p| {
-                p.properties()
+            let desk = central.peripherals().into_iter().find(|p| match mac {
+                Some(mac) => p.properties().address == mac,
+                None => p
+                    .properties()
                     .local_name
                     .iter()
-                    .any(|name| name.contains("Desk"))
+                    .any(|name| name.contains("Desk")),
             });
             if desk.is_some() {
                 return desk;
