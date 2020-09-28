@@ -20,9 +20,6 @@ use std::cmp::{max, min, Ordering};
 use std::thread;
 use std::time::Duration;
 
-// adapter retreival works differently depending on your platform right now.
-// API needs to be aligned.
-
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn get_central(manager: &Manager) -> Adapter {
     let adapters = manager.adapters().unwrap();
@@ -54,13 +51,13 @@ pub const MAX_HEIGHT: i16 = 12700;
 /// convert desk response from bytes to meters
 ///
 /// ```
-/// assert_eq!(idasen::bytes_to_tenth_milimeters(&[0x64, 0x19, 0x00, 0x00]), idasen::MAX_HEIGHT);
-/// assert_eq!(idasen::bytes_to_tenth_milimeters(&[0x00, 0x00, 0x00, 0x00]), idasen::MIN_HEIGHT);
-/// assert_eq!(idasen::bytes_to_tenth_milimeters(&[0x51, 0x04, 0x00, 0x00]), 7305);
-/// assert_eq!(idasen::bytes_to_tenth_milimeters(&[0x08, 0x08, 0x00, 0x00]), 8256);
-/// assert_eq!(idasen::bytes_to_tenth_milimeters(&[0x64, 0x18, 0x00, 0x00]), 12444);
+/// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x64, 0x19, 0x00, 0x00]), idasen::MAX_HEIGHT);
+/// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x00, 0x00, 0x00, 0x00]), idasen::MIN_HEIGHT);
+/// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x51, 0x04, 0x00, 0x00]), 7305);
+/// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x08, 0x08, 0x00, 0x00]), 8256);
+/// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x64, 0x18, 0x00, 0x00]), 12444);
 /// ```
-pub fn bytes_to_tenth_milimeters(bytes: &[u8]) -> i16 {
+pub fn bytes_to_tenth_millimeters(bytes: &[u8]) -> i16 {
     let as_int = ((bytes[1] as i16) << 8) + bytes[0] as i16;
     as_int + MIN_HEIGHT
 }
@@ -80,18 +77,29 @@ pub enum Error {
     #[fail(display = "Cannot connect to the device.")]
     ConnectionFailed,
 
-    #[fail(display = "Bluetooth characteristics not found: '{}'.", characteristic)]
-    CharacteristicsNotFound { characteristic: String },
+    #[fail(display = "Cannot scan for devices.")]
+    ScanFailed,
+
+    #[fail(display = "Cannot discover Bluetooth characteristics.")]
+    CharacteristicsDiscoveryFailed,
+
+    #[fail(display = "Bluetooth characteristics not found: '{}'.", _0)]
+    CharacteristicsNotFound(String),
 
     #[fail(display = "Desired position has to be between MIN_HEIGHT and MAX_HEIGHT.")]
     PositionNotInRange,
+
+    #[fail(display = "Cannot read position.")]
+    CannotReadPosition,
 }
 
 impl Idasen {
     pub fn new() -> Result<Self, Error> {
         let manager = Manager::new().unwrap();
         let central = get_central(&manager);
-        central.start_scan().unwrap();
+        if central.start_scan().is_err() {
+            return Err(Error::ScanFailed);
+        };
 
         let desk = Idasen::find_desk(central);
         if desk.is_none() {
@@ -103,15 +111,17 @@ impl Idasen {
         }
         let mac_addr = desk.address();
 
-        let characteristics = desk.discover_characteristics().unwrap();
+        let characteristics = desk.discover_characteristics();
+        if characteristics.is_err() {
+            return Err(Error::CharacteristicsDiscoveryFailed);
+        };
+        let characteristics = characteristics.unwrap();
 
         let control_characteristic = characteristics
             .iter()
             .find(|characteristic| characteristic.uuid == CONTROL_UUID);
         if control_characteristic.is_none() {
-            return Err(Error::CharacteristicsNotFound {
-                characteristic: "Control".to_string(),
-            });
+            return Err(Error::CharacteristicsNotFound("Control".to_string()));
         }
         let control_characteristic = control_characteristic.unwrap().clone();
 
@@ -119,9 +129,7 @@ impl Idasen {
             .iter()
             .find(|characteristics| characteristics.uuid == POSITION_UUID);
         if position_characteristic.is_none() {
-            return Err(Error::CharacteristicsNotFound {
-                characteristic: "Control".to_string(),
-            });
+            return Err(Error::CharacteristicsNotFound("Position".to_string()));
         }
         let position_characteristic = position_characteristic.unwrap().clone();
 
@@ -172,17 +180,17 @@ impl Idasen {
             return Err(Error::PositionNotInRange);
         }
 
-        let going_up = match target_position.cmp(&self.position()) {
+        let going_up = match target_position.cmp(&self.position()?) {
             Ordering::Greater => true,
             Ordering::Less => false,
             Ordering::Equal => return Ok(()),
         };
 
         let mut position_reached = false;
-        let mut last_position = self.position();
+        let mut last_position = self.position()?;
         let mut speed;
         while !position_reached {
-            let current_position = self.position();
+            let current_position = self.position()?;
             let remaining_distance = (target_position - current_position).abs();
             speed = (last_position - current_position).abs();
             if remaining_distance <= min(speed, 5) {
@@ -202,12 +210,15 @@ impl Idasen {
         Ok(())
     }
 
-    /// Return the desk height in tenth milimeters (1m = 10000)
-    pub fn position(&self) -> i16 {
+    /// Return the desk height in tenth millimeters (1m = 10000)
+    pub fn position(&self) -> Result<i16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
             self.position_characteristic.uuid,
         );
-        bytes_to_tenth_milimeters(&response.unwrap())
+        match response {
+            Ok(value) => Ok(bytes_to_tenth_millimeters(&value)),
+            Err(_) => Err(Error::CannotReadPosition),
+        }
     }
 }
