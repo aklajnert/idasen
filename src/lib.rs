@@ -6,7 +6,8 @@ extern crate failure_derive;
 use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, Peripheral, UUID};
 #[cfg(target_os = "linux")]
 use btleplug::bluez::{
-    adapter::ConnectedAdapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
+    adapter::ConnectedAdapter as Adapter, manager::Manager,
+    peripheral::Peripheral as PeripheralStruct,
 };
 #[cfg(target_os = "macos")]
 use btleplug::corebluetooth::{
@@ -27,7 +28,7 @@ fn get_central(manager: &Manager) -> Adapter {
 }
 
 #[cfg(target_os = "linux")]
-fn get_central(manager: &Manager) -> ConnectedAdapter {
+fn get_central(manager: &Manager) -> Adapter {
     let adapters = manager.adapters().unwrap();
     let adapter = adapters.into_iter().next().unwrap();
     adapter.connect().unwrap()
@@ -232,6 +233,7 @@ impl Idasen {
     }
 
     /// Return the desk height in tenth millimeters (1m = 10000)
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn position(&self) -> Result<i16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
@@ -241,5 +243,14 @@ impl Idasen {
             Ok(value) => Ok(bytes_to_tenth_millimeters(&value)),
             Err(_) => Err(Error::CannotReadPosition),
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn position(&self) -> Result<i16, Error> {
+        let response = self.desk.read_by_type(
+            &self.position_characteristic,
+            self.position_characteristic.uuid,
+        );
+        Ok(bytes_to_tenth_millimeters(&response))
     }
 }
