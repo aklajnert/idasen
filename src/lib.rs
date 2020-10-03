@@ -46,8 +46,8 @@ const UP: [u8; 2] = [0x47, 0x00];
 const DOWN: [u8; 2] = [0x46, 0x00];
 const STOP: [u8; 2] = [0xFF, 0x00];
 
-pub const MIN_HEIGHT: i16 = 6200;
-pub const MAX_HEIGHT: i16 = 12700;
+pub const MIN_HEIGHT: u16 = 6200;
+pub const MAX_HEIGHT: u16 = 12700;
 
 /// convert desk response from bytes to meters
 ///
@@ -58,8 +58,8 @@ pub const MAX_HEIGHT: i16 = 12700;
 /// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x08, 0x08, 0x00, 0x00]), 8256);
 /// assert_eq!(idasen::bytes_to_tenth_millimeters(&[0x64, 0x18, 0x00, 0x00]), 12444);
 /// ```
-pub fn bytes_to_tenth_millimeters(bytes: &[u8]) -> i16 {
-    let as_int = ((bytes[1] as i16) << 8) + bytes[0] as i16;
+pub fn bytes_to_tenth_millimeters(bytes: &[u8]) -> u16 {
+    let as_int = ((bytes[1] as u16) << 8) + bytes[0] as u16;
     as_int + MIN_HEIGHT
 }
 
@@ -197,7 +197,7 @@ impl Idasen {
     }
 
     /// Move desk to a desired position. The precision is decent, usually less than 1mm off.
-    pub fn move_to(&self, target_position: i16) -> Result<(), Error> {
+    pub fn move_to(&self, target_position: u16) -> Result<(), Error> {
         if target_position < MIN_HEIGHT || target_position > MAX_HEIGHT {
             return Err(Error::PositionNotInRange);
         }
@@ -209,10 +209,11 @@ impl Idasen {
         };
 
         let mut position_reached = false;
-        let mut last_position = self.position()?;
+        let mut last_position = self.position()? as i16;
         let mut speed;
+        let target_position = target_position as i16;
         while !position_reached {
-            let current_position = self.position()?;
+            let current_position = self.position()? as i16;
             let remaining_distance = (target_position - current_position).abs();
             speed = (last_position - current_position).abs();
             if remaining_distance <= min(speed, 5) {
@@ -234,7 +235,7 @@ impl Idasen {
 
     /// Return the desk height in tenth millimeters (1m = 10000)
     #[cfg(any(target_os = "windows", target_os = "macos"))]
-    pub fn position(&self) -> Result<i16, Error> {
+    pub fn position(&self) -> Result<u16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
             self.position_characteristic.uuid,
@@ -246,7 +247,7 @@ impl Idasen {
     }
 
     #[cfg(target_os = "linux")]
-    pub fn position(&self) -> Result<i16, Error> {
+    pub fn position(&self) -> Result<u16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
             self.position_characteristic.uuid,
