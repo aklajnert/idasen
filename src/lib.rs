@@ -1,4 +1,3 @@
-#![feature(type_alias_impl_trait)]
 extern crate btleplug;
 extern crate failure;
 #[macro_use]
@@ -68,6 +67,9 @@ pub enum Error {
     #[fail(display = "Cannot scan for devices.")]
     ScanFailed,
 
+    #[fail(display = "Permission denied.")]
+    PermissionDenied,
+
     #[fail(display = "Cannot discover Bluetooth characteristics.")]
     CharacteristicsDiscoveryFailed,
 
@@ -87,8 +89,11 @@ pub enum Error {
 fn get_desk(mac: Option<BDAddr>) -> Result<impl Peripheral, Error> {
     let manager = Manager::new().unwrap();
     let central = get_central(&manager);
-    if central.start_scan().is_err() {
-        return Err(Error::ScanFailed);
+    if let Err(err) = central.start_scan() {
+        return Err(match err {
+            btleplug::Error::PermissionDenied => Error::PermissionDenied,
+            _ => Error::ScanFailed,
+        });
     };
 
     let desk = find_desk(central, mac);
@@ -122,10 +127,8 @@ fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Peripheral> {
     None
 }
 
-pub type IdasenType = Idasen<impl Peripheral>;
-
 /// Get instance of `Idasen` struct. The desk will be discovered by the name.
-pub fn get_instance() -> Result<IdasenType, Error> {
+pub fn get_instance() -> Result<Idasen<impl Peripheral>, Error> {
     let desk = get_desk(None)?;
     Ok(Idasen::new(desk)?)
 }
@@ -133,7 +136,7 @@ pub fn get_instance() -> Result<IdasenType, Error> {
 /// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
 /// The address can be obtained also by accessing `mac_addr` property
 /// on instantiated `Idasen` instance.
-pub fn get_instance_by_mac(mac: &str) -> Result<IdasenType, Error> {
+pub fn get_instance_by_mac(mac: &str) -> Result<Idasen<impl Peripheral>, Error> {
     let addr = mac.parse::<BDAddr>();
     match addr {
         Ok(addr) => {
@@ -242,7 +245,6 @@ impl<T: Peripheral> Idasen<T> {
     }
 
     /// Return the desk height in tenth millimeters (1m = 10000)
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn position(&self) -> Result<u16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
@@ -252,14 +254,5 @@ impl<T: Peripheral> Idasen<T> {
             Ok(value) => Ok(bytes_to_tenth_millimeters(&value)),
             Err(_) => Err(Error::CannotReadPosition),
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn position(&self) -> Result<u16, Error> {
-        let response = self.desk.read_by_type(
-            &self.position_characteristic,
-            self.position_characteristic.uuid,
-        );
-        Ok(bytes_to_tenth_millimeters(&response))
     }
 }
