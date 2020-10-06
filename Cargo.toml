@@ -4,10 +4,12 @@ version = "0.1.0"
 authors = ["Andrzej Klajnert <github@aklajnert.pl>"]
 edition = "2018"
 license = "MIT"
-description = "Crate to control IDASEN standing desk from IKEA via Bluetooth."
+description = "Control IKEA IDÅSEN standing desk via Bluetooth."
 homepage = "https://github.com/aklajnert/idasen"
 repository = "https://github.com/aklajnert/idasen"
 readme = "README.md"
+keywords = ["bluetooth", "ikea", "idasen", "standing-desk"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

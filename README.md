@@ -1,6 +1,6 @@
 # Idasen
 
-Crate to control IDASEN standing desk from IKEA via Bluetooth.
+Control IKEA IDÅSEN standing desk via Bluetooth.
 
 ## Usage
 
