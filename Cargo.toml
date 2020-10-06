@@ -12,6 +12,6 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-btleplug = "0.5.1"
+btleplug = "0.5.2"
 failure = "0.1.8"
 failure_derive = "0.1.8"

@@ -3,20 +3,14 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 
-use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, Peripheral, UUID};
+pub use btleplug::api::Peripheral as Device;
+use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, UUID};
 #[cfg(target_os = "linux")]
-use btleplug::bluez::{
-    adapter::ConnectedAdapter as Adapter, manager::Manager,
-    peripheral::Peripheral as PeripheralStruct,
-};
+use btleplug::bluez::{adapter::ConnectedAdapter as Adapter, manager::Manager};
 #[cfg(target_os = "macos")]
-use btleplug::corebluetooth::{
-    adapter::Adapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
-};
+use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "windows")]
-use btleplug::winrtble::{
-    adapter::Adapter, manager::Manager, peripheral::Peripheral as PeripheralStruct,
-};
+use btleplug::winrtble::{adapter::Adapter, manager::Manager};
 use std::cmp::{max, min, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -63,13 +57,6 @@ pub fn bytes_to_tenth_millimeters(bytes: &[u8]) -> u16 {
     as_int + MIN_HEIGHT
 }
 
-pub struct Idasen {
-    pub mac_addr: BDAddr,
-    desk: PeripheralStruct,
-    control_characteristic: Characteristic,
-    position_characteristic: Characteristic,
-}
-
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "Cannot find the device.")]
@@ -80,6 +67,9 @@ pub enum Error {
 
     #[fail(display = "Cannot scan for devices.")]
     ScanFailed,
+
+    #[fail(display = "Permission denied.")]
+    PermissionDenied,
 
     #[fail(display = "Cannot discover Bluetooth characteristics.")]
     CharacteristicsDiscoveryFailed,
@@ -97,38 +87,80 @@ pub enum Error {
     MacAddrParseFailed(ParseBDAddrError),
 }
 
-impl Idasen {
-    /// Default constructor, discovers the desk by it's name.
-    pub fn new() -> Result<Self, Error> {
-        Self::get_desk(None)
+fn get_desk(mac: Option<BDAddr>) -> Result<impl Device, Error> {
+    let manager = Manager::new().unwrap();
+    let central = get_central(&manager);
+    if let Err(err) = central.start_scan() {
+        return Err(match err {
+            btleplug::Error::PermissionDenied => Error::PermissionDenied,
+            _ => Error::ScanFailed,
+        });
+    };
+
+    let desk = find_desk(central, mac);
+    if desk.is_none() {
+        return Err(Error::CannotFindDevice);
     }
-
-    /// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
-    /// The address can be obtained also by accessing `mac_addr` property
-    /// on instantiated `Idasen` instance.
-    pub fn by_addr(mac: &str) -> Result<Self, Error> {
-        let addr = mac.parse::<BDAddr>();
-        match addr {
-            Ok(addr) => Self::get_desk(Some(addr)),
-            Err(err) => Err(Error::MacAddrParseFailed(err)),
-        }
+    let desk = desk.unwrap();
+    if desk.connect().is_err() {
+        return Err(Error::ConnectionFailed);
     }
+    Ok(desk)
+}
 
-    fn get_desk(mac: Option<BDAddr>) -> Result<Self, Error> {
-        let manager = Manager::new().unwrap();
-        let central = get_central(&manager);
-        if central.start_scan().is_err() {
-            return Err(Error::ScanFailed);
-        };
+fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Device> {
+    let mut attempt = 0;
+    while attempt < 120 {
+        let desk = central.peripherals().into_iter().find(|p| match mac {
+            Some(mac) => p.properties().address == mac,
+            None => p
+                .properties()
+                .local_name
+                .iter()
+                .any(|name| name.contains("Desk")),
+        });
+        if desk.is_some() {
+            return desk;
+        }
+        attempt += 1;
+        thread::sleep(Duration::from_millis(50));
+    }
+    None
+}
 
-        let desk = Idasen::find_desk(central, mac);
-        if desk.is_none() {
-            return Err(Error::CannotFindDevice);
+/// Get instance of `Idasen` struct. The desk will be discovered by the name.
+pub fn get_instance() -> Result<Idasen<impl Device>, Error> {
+    let desk = get_desk(None)?;
+    Ok(Idasen::new(desk)?)
+}
+
+/// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
+/// The address can be obtained also by accessing `mac_addr` property
+/// on instantiated `Idasen` instance.
+pub fn get_instance_by_mac(mac: &str) -> Result<Idasen<impl Device>, Error> {
+    let addr = mac.parse::<BDAddr>();
+    match addr {
+        Ok(addr) => {
+            let desk = get_desk(Some(addr))?;
+            Ok(Idasen::new(desk)?)
         }
-        let desk = desk.unwrap();
-        if desk.connect().is_err() {
-            return Err(Error::ConnectionFailed);
-        }
+        Err(err) => Err(Error::MacAddrParseFailed(err)),
+    }
+}
+
+pub struct Idasen<T>
+where
+    T: Device,
+{
+    pub mac_addr: BDAddr,
+    desk: T,
+    control_characteristic: Characteristic,
+    position_characteristic: Characteristic,
+}
+
+impl<T: Device> Idasen<T> {
+    /// Instantiate the struct. Requires `Device` instance.
+    pub fn new(desk: T) -> Result<Self, Error> {
         let mac_addr = desk.address();
 
         let characteristics = desk.discover_characteristics();
@@ -159,26 +191,6 @@ impl Idasen {
             control_characteristic,
             position_characteristic,
         })
-    }
-
-    fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<PeripheralStruct> {
-        let mut attempt = 0;
-        while attempt < 120 {
-            let desk = central.peripherals().into_iter().find(|p| match mac {
-                Some(mac) => p.properties().address == mac,
-                None => p
-                    .properties()
-                    .local_name
-                    .iter()
-                    .any(|name| name.contains("Desk")),
-            });
-            if desk.is_some() {
-                return desk;
-            }
-            attempt += 1;
-            thread::sleep(Duration::from_millis(50));
-        }
-        None
     }
 
     /// Move desk up.
@@ -234,7 +246,6 @@ impl Idasen {
     }
 
     /// Return the desk height in tenth millimeters (1m = 10000)
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub fn position(&self) -> Result<u16, Error> {
         let response = self.desk.read_by_type(
             &self.position_characteristic,
@@ -244,14 +255,5 @@ impl Idasen {
             Ok(value) => Ok(bytes_to_tenth_millimeters(&value)),
             Err(_) => Err(Error::CannotReadPosition),
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn position(&self) -> Result<u16, Error> {
-        let response = self.desk.read_by_type(
-            &self.position_characteristic,
-            self.position_characteristic.uuid,
-        );
-        Ok(bytes_to_tenth_millimeters(&response))
     }
 }

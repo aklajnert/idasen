@@ -5,13 +5,14 @@ Crate to control IDASEN standing desk from IKEA via Bluetooth.
 ## Usage
 
 ```rust
-use idasen::Idasen;
+use idasen::{get_instance, Idasen, Device};
 
 // instantiate the struct, this will attempt to connect to the desk and discover its characteristics
-let desk = Idasen::new()?;
+let desk: Idasen<impl Device> = get_instance()?;
 
 // alternatively, if there's more than one desk you can get the correct one by it's mac addres
-// let desk = Idasen::by_addr("EC:86:F6:44:D3:31")?;
+// for some reason, using MAC seems to be more reliable when it comes to device discovering
+// let desk: Idasen<impl Device> = get_instance_by_mac("EC:86:F6:44:D3:31")?;
 
 // move desk up and down
 desk.up();
