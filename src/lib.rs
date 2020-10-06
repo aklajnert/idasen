@@ -3,7 +3,8 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 
-use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, Peripheral, UUID};
+pub use btleplug::api::Peripheral as Device;
+use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, UUID};
 #[cfg(target_os = "linux")]
 use btleplug::bluez::{adapter::ConnectedAdapter as Adapter, manager::Manager};
 #[cfg(target_os = "macos")]
@@ -86,7 +87,7 @@ pub enum Error {
     MacAddrParseFailed(ParseBDAddrError),
 }
 
-fn get_desk(mac: Option<BDAddr>) -> Result<impl Peripheral, Error> {
+fn get_desk(mac: Option<BDAddr>) -> Result<impl Device, Error> {
     let manager = Manager::new().unwrap();
     let central = get_central(&manager);
     if let Err(err) = central.start_scan() {
@@ -107,7 +108,7 @@ fn get_desk(mac: Option<BDAddr>) -> Result<impl Peripheral, Error> {
     Ok(desk)
 }
 
-fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Peripheral> {
+fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Device> {
     let mut attempt = 0;
     while attempt < 120 {
         let desk = central.peripherals().into_iter().find(|p| match mac {
@@ -128,7 +129,7 @@ fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Peripheral> {
 }
 
 /// Get instance of `Idasen` struct. The desk will be discovered by the name.
-pub fn get_instance() -> Result<Idasen<impl Peripheral>, Error> {
+pub fn get_instance() -> Result<Idasen<impl Device>, Error> {
     let desk = get_desk(None)?;
     Ok(Idasen::new(desk)?)
 }
@@ -136,7 +137,7 @@ pub fn get_instance() -> Result<Idasen<impl Peripheral>, Error> {
 /// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
 /// The address can be obtained also by accessing `mac_addr` property
 /// on instantiated `Idasen` instance.
-pub fn get_instance_by_mac(mac: &str) -> Result<Idasen<impl Peripheral>, Error> {
+pub fn get_instance_by_mac(mac: &str) -> Result<Idasen<impl Device>, Error> {
     let addr = mac.parse::<BDAddr>();
     match addr {
         Ok(addr) => {
@@ -149,7 +150,7 @@ pub fn get_instance_by_mac(mac: &str) -> Result<Idasen<impl Peripheral>, Error> 
 
 pub struct Idasen<T>
 where
-    T: Peripheral,
+    T: Device,
 {
     pub mac_addr: BDAddr,
     desk: T,
@@ -157,8 +158,8 @@ where
     position_characteristic: Characteristic,
 }
 
-impl<T: Peripheral> Idasen<T> {
-    /// Instantiate the struct. Requires `Peripheral` instance.
+impl<T: Device> Idasen<T> {
+    /// Instantiate the struct. Requires `Device` instance.
     pub fn new(desk: T) -> Result<Self, Error> {
         let mac_addr = desk.address();
 
