@@ -9,6 +9,7 @@ homepage = "https://github.com/aklajnert/idasen"
 repository = "https://github.com/aklajnert/idasen"
 readme = "README.md"
 keywords = ["bluetooth", "ikea", "idasen", "standing-desk"]
+exclude = [".github/workflows",]
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
