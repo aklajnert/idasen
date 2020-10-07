@@ -14,7 +14,6 @@ use btleplug::winrtble::{adapter::Adapter, manager::Manager};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::{max, min, Ordering};
 use std::thread;
-use std::thread::current;
 use std::time::Duration;
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
