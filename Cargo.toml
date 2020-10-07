@@ -1,6 +1,6 @@
 [package]
 name = "idasen"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Andrzej Klajnert <github@aklajnert.pl>"]
 edition = "2018"
 license = "MIT"
@@ -18,3 +18,4 @@ exclude = [".github/workflows",]
 btleplug = "0.5.2"
 failure = "0.1.8"
 failure_derive = "0.1.8"
+indicatif = "0.15.0"

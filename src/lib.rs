@@ -11,8 +11,10 @@ use btleplug::bluez::{adapter::ConnectedAdapter as Adapter, manager::Manager};
 use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "windows")]
 use btleplug::winrtble::{adapter::Adapter, manager::Manager};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::{max, min, Ordering};
 use std::thread;
+use std::thread::current;
 use std::time::Duration;
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -210,6 +212,21 @@ impl<T: Device> Idasen<T> {
 
     /// Move desk to a desired position. The precision is decent, usually less than 1mm off.
     pub fn move_to(&self, target_position: u16) -> Result<(), Error> {
+        self.move_to_target(target_position, None)
+    }
+
+    pub fn move_to_with_progress(&self, target_position: u16) -> Result<(), Error> {
+        let initial_position = (target_position as i16 - self.position()? as i16).abs();
+        let progress = ProgressBar::new(initial_position as u64);
+        progress.set_style(ProgressStyle::default_bar().template("{spinner} {wide_bar} [{msg}cm]"));
+        self.move_to_target(target_position, Some(progress))
+    }
+
+    fn move_to_target(
+        &self,
+        target_position: u16,
+        progress: Option<ProgressBar>,
+    ) -> Result<(), Error> {
         if target_position < MIN_HEIGHT || target_position > MAX_HEIGHT {
             return Err(Error::PositionNotInRange);
         }
@@ -228,6 +245,11 @@ impl<T: Device> Idasen<T> {
             let current_position = self.position()? as i16;
             let remaining_distance = (target_position - current_position).abs();
             speed = (last_position - current_position).abs();
+            if let Some(ref progress) = progress {
+                progress.inc(speed as u64);
+                let position_cm = current_position as f32 / 100.0;
+                progress.set_message(format!("{}", position_cm).as_str());
+            }
             if remaining_distance <= min(speed, 5) {
                 position_reached = true;
                 let _ = self.stop();
@@ -240,6 +262,10 @@ impl<T: Device> Idasen<T> {
                 let _ = self.stop();
             }
             last_position = current_position;
+        }
+
+        if let Some(progress) = progress {
+            progress.finish();
         }
 
         Ok(())
