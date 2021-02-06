@@ -214,7 +214,7 @@ impl<T: Device> Idasen<T> {
         target_position: u16,
         progress: Option<ProgressBar>,
     ) -> Result<(), Error> {
-        if target_position < MIN_HEIGHT || target_position > MAX_HEIGHT {
+        if !(MIN_HEIGHT..=MAX_HEIGHT).contains(&target_position) {
             return Err(Error::PositionNotInRange);
         }
 
