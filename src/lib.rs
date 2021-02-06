@@ -16,19 +16,6 @@ use std::cmp::{max, min, Ordering};
 use std::thread;
 use std::time::Duration;
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
-fn get_central(manager: &Manager) -> Adapter {
-    let adapters = manager.adapters().unwrap();
-    adapters.into_iter().next().unwrap()
-}
-
-#[cfg(target_os = "linux")]
-fn get_central(manager: &Manager) -> Adapter {
-    let adapters = manager.adapters().unwrap();
-    let adapter = adapters.into_iter().next().unwrap();
-    adapter.connect().unwrap()
-}
-
 const CONTROL_UUID: UUID = UUID::B128([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x02, 0x00, 0xfa, 0x99,
 ]);
@@ -90,7 +77,8 @@ pub enum Error {
 
 fn get_desk(mac: Option<BDAddr>) -> Result<impl Device, Error> {
     let manager = Manager::new().unwrap();
-    let central = get_central(&manager);
+    let adapters = manager.adapters().unwrap();
+    let central = adapters.into_iter().next().unwrap();
     if let Err(err) = central.start_scan() {
         return Err(match err {
             btleplug::Error::PermissionDenied => Error::PermissionDenied,
