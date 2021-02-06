@@ -6,7 +6,7 @@ extern crate failure_derive;
 pub use btleplug::api::Peripheral as Device;
 use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, UUID};
 #[cfg(target_os = "linux")]
-use btleplug::bluez::{adapter::ConnectedAdapter as Adapter, manager::Manager};
+use btleplug::bluez::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "macos")]
 use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "windows")]
@@ -15,19 +15,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::{max, min, Ordering};
 use std::thread;
 use std::time::Duration;
-
-#[cfg(any(target_os = "windows", target_os = "macos"))]
-fn get_central(manager: &Manager) -> Adapter {
-    let adapters = manager.adapters().unwrap();
-    adapters.into_iter().next().unwrap()
-}
-
-#[cfg(target_os = "linux")]
-fn get_central(manager: &Manager) -> Adapter {
-    let adapters = manager.adapters().unwrap();
-    let adapter = adapters.into_iter().next().unwrap();
-    adapter.connect().unwrap()
-}
 
 const CONTROL_UUID: UUID = UUID::B128([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x02, 0x00, 0xfa, 0x99,
@@ -90,7 +77,8 @@ pub enum Error {
 
 fn get_desk(mac: Option<BDAddr>) -> Result<impl Device, Error> {
     let manager = Manager::new().unwrap();
-    let central = get_central(&manager);
+    let adapters = manager.adapters().unwrap();
+    let central = adapters.into_iter().next().unwrap();
     if let Err(err) = central.start_scan() {
         return Err(match err {
             btleplug::Error::PermissionDenied => Error::PermissionDenied,
@@ -226,7 +214,7 @@ impl<T: Device> Idasen<T> {
         target_position: u16,
         progress: Option<ProgressBar>,
     ) -> Result<(), Error> {
-        if target_position < MIN_HEIGHT || target_position > MAX_HEIGHT {
+        if !(MIN_HEIGHT..=MAX_HEIGHT).contains(&target_position) {
             return Err(Error::PositionNotInRange);
         }
 
