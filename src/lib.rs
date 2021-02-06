@@ -257,7 +257,7 @@ impl<T: Device> Idasen<T> {
             } else if !going_up {
                 let _ = self.down();
             }
-            if remaining_distance < max(speed * 10, 10) {
+            if remaining_distance < max(speed * 5, 10) {
                 let _ = self.stop();
             }
             last_position = current_position;
@@ -272,10 +272,7 @@ impl<T: Device> Idasen<T> {
 
     /// Return the desk height in tenth millimeters (1m = 10000)
     pub fn position(&self) -> Result<u16, Error> {
-        let response = self.desk.read_by_type(
-            &self.position_characteristic,
-            self.position_characteristic.uuid,
-        );
+        let response = self.desk.read(&self.position_characteristic);
         match response {
             Ok(value) => Ok(bytes_to_tenth_millimeters(&value)),
             Err(_) => Err(Error::CannotReadPosition),
