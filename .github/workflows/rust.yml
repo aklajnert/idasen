@@ -27,4 +27,4 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
       - name: Lint
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -Dwarnings
