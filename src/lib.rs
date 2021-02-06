@@ -6,7 +6,7 @@ extern crate failure_derive;
 pub use btleplug::api::Peripheral as Device;
 use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, UUID};
 #[cfg(target_os = "linux")]
-use btleplug::bluez::{adapter::ConnectedAdapter as Adapter, manager::Manager};
+use btleplug::bluez::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "macos")]
 use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "windows")]
