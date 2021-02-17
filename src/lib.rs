@@ -12,9 +12,12 @@ use btleplug::corebluetooth::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "windows")]
 use btleplug::winrtble::{adapter::Adapter, manager::Manager};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::cmp::{max, min, Ordering};
 use std::thread;
 use std::time::Duration;
+use std::{
+    cmp::{max, Ordering},
+    time::Instant,
+};
 
 const CONTROL_UUID: UUID = UUID::B128([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x02, 0x00, 0xfa, 0x99,
@@ -99,7 +102,7 @@ fn get_desk(mac: Option<BDAddr>) -> Result<impl Device, Error> {
 
 fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Device> {
     let mut attempt = 0;
-    while attempt < 120 {
+    while attempt < 240 {
         let desk = central.peripherals().into_iter().find(|p| match mac {
             Some(mac) => p.properties().address == mac,
             None => p
@@ -218,26 +221,32 @@ impl<T: Device> Idasen<T> {
             return Err(Error::PositionNotInRange);
         }
 
-        let going_up = match target_position.cmp(&self.position()?) {
-            Ordering::Greater => true,
-            Ordering::Less => false,
-            Ordering::Equal => return Ok(()),
-        };
-
         let mut position_reached = false;
         let mut last_position = self.position()? as i16;
-        let mut speed;
+        let mut last_position_read_at = Instant::now();
         let target_position = target_position as i16;
         while !position_reached {
             let current_position = self.position()? as i16;
+            let going_up = match target_position.cmp(&current_position) {
+                Ordering::Greater => true,
+                Ordering::Less => false,
+                Ordering::Equal => return Ok(()),
+            };
             let remaining_distance = (target_position - current_position).abs();
-            speed = (last_position - current_position).abs();
+            let elapsed_millis = last_position_read_at.elapsed().as_millis();
+            let moved_height = (last_position - current_position).abs();
+
+            // Tenth of millimetres per second
+            let speed = ((moved_height as f64 / elapsed_millis as f64) * 1000f64) as i16;
+
             if let Some(ref progress) = progress {
                 progress.inc(speed as u64);
                 let position_cm = current_position as f32 / 100.0;
                 progress.set_message(format!("{}", position_cm).as_str());
             }
-            if remaining_distance <= min(speed, 5) {
+
+            if remaining_distance <= 10 {
+                // Millimetre or less is good enough.
                 position_reached = true;
                 let _ = self.stop();
             } else if going_up {
@@ -245,10 +254,18 @@ impl<T: Device> Idasen<T> {
             } else if !going_up {
                 let _ = self.down();
             }
-            if remaining_distance < max(speed * 5, 10) {
+
+            // If we're either:
+            // * less than 5 millimetres, or:
+            // * less than half a second from target
+            // then we need to stop every iteration so that we don't overshoot
+            if remaining_distance < max(speed / 2, 50) {
                 let _ = self.stop();
             }
-            last_position = current_position;
+
+            // Read last_position again to avoid weird speed readings when switching direction
+            last_position = self.position()? as i16;
+            last_position_read_at = Instant::now();
         }
 
         if let Some(progress) = progress {
