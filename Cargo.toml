@@ -1,6 +1,6 @@
 [package]
 name = "idasen"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Andrzej Klajnert <github@aklajnert.pl>"]
 edition = "2018"
 license = "MIT"
