@@ -19,3 +19,6 @@ btleplug = "0.6.0"
 failure = "0.1.8"
 failure_derive = "0.1.8"
 indicatif = "0.15.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winrt = "=0.7.2"
