@@ -22,13 +22,12 @@ jobs:
       - name: Install dependencies
         run: sudo apt install libdbus-1-dev -y
         if: matrix.platform == 'ubuntu-latest'
-      - name: Update rust
-        run: rustup update
-        if: matrix.platform == 'windows-latest'
+      - name: Set rust version
+        run: rustup default 1.49.0
       - name: Show version
         run: rustup show
-      - name: Build
-        run: cargo build --verbose
+      - name: Check
+        run: cargo check --all
       - name: Run tests
         run: cargo test --verbose
       - name: Lint
