@@ -1,6 +1,9 @@
 # Idasen
 
-Control IKEA IDÅSEN standing desk via Bluetooth.
+Control IKEA IDÅSEN standing desk via Bluetooth.  
+
+[![Crates.io Version](https://img.shields.io/crates/v/idasen)](https://crates.io/crates/idasen)
+[![Crates.io License](https://img.shields.io/crates/l/idasen)](https://crates.io/crates/idasen)
 
 ## Usage
 
