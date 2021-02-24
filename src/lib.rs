@@ -71,6 +71,9 @@ pub enum Error {
     #[fail(display = "Desired position has to be between MIN_HEIGHT and MAX_HEIGHT.")]
     PositionNotInRange,
 
+    #[fail(display = "Cannot subscribe to read position.")]
+    CannotSubscribePosition,
+
     #[fail(display = "Cannot read position.")]
     CannotReadPosition,
 
@@ -176,6 +179,9 @@ impl<T: Device> Idasen<T> {
             return Err(Error::CharacteristicsNotFound("Position".to_string()));
         }
         let position_characteristic = position_characteristic.unwrap().clone();
+        if desk.subscribe(&position_characteristic).is_err() {
+            return Err(Error::CannotSubscribePosition)
+        };
 
         Ok(Self {
             desk,
