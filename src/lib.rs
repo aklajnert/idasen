@@ -4,7 +4,8 @@ extern crate failure;
 extern crate failure_derive;
 
 pub use btleplug::api::Peripheral as Device;
-use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, UUID};
+use uuid::Uuid;
+use btleplug::api::{BDAddr, Central, Characteristic, ParseBDAddrError, WriteType};
 #[cfg(target_os = "linux")]
 use btleplug::bluez::{adapter::Adapter, manager::Manager};
 #[cfg(target_os = "macos")]
@@ -19,11 +20,11 @@ use std::{
     time::Instant,
 };
 
-const CONTROL_UUID: UUID = UUID::B128([
+const CONTROL_UUID: Uuid = Uuid::from_bytes([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x02, 0x00, 0xfa, 0x99,
 ]);
 
-const POSITION_UUID: UUID = UUID::B128([
+const POSITION_UUID: Uuid = Uuid::from_bytes([
     0x8a, 0xf7, 0x15, 0x02, 0x9c, 0x00, 0x49, 0x8a, 0x24, 0x10, 0x8a, 0x33, 0x21, 0x00, 0xfa, 0x99,
 ]);
 
@@ -126,7 +127,7 @@ fn find_desk(central: Adapter, mac: Option<BDAddr>) -> Option<impl Device> {
 /// Get instance of `Idasen` struct. The desk will be discovered by the name.
 pub fn get_instance() -> Result<Idasen<impl Device>, Error> {
     let desk = get_desk(None)?;
-    Ok(Idasen::new(desk)?)
+    Idasen::new(desk)
 }
 
 /// Get the desk instance by it's Bluetooth MAC address (BD_ADDR).
@@ -193,17 +194,17 @@ impl<T: Device> Idasen<T> {
 
     /// Move desk up.
     pub fn up(&self) -> btleplug::Result<()> {
-        self.desk.command(&self.control_characteristic, &UP)
+        self.desk.write(&self.control_characteristic, &UP, WriteType::WithoutResponse)
     }
 
     /// Lower the desk's position.
     pub fn down(&self) -> btleplug::Result<()> {
-        self.desk.command(&self.control_characteristic, &DOWN)
+        self.desk.write(&self.control_characteristic, &DOWN, WriteType::WithoutResponse)
     }
 
     /// Stop desk from moving.
     pub fn stop(&self) -> btleplug::Result<()> {
-        self.desk.command(&self.control_characteristic, &STOP)
+        self.desk.write(&self.control_characteristic, &STOP, WriteType::WithoutResponse)
     }
 
     /// Move desk to a desired position. The precision is decent, usually less than 1mm off.
