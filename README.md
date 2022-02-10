@@ -12,7 +12,7 @@ use idasen::{get_instance, Idasen, Device};
 
 // instantiate the struct, this will attempt to connect to the desk 
 // and discover its characteristics
-let desk: Idasen<impl Device> = get_instance()?;
+let desk: Idasen<impl Device> = get_instance().await?;
 
 // alternatively, if there's more than one desk you can get the 
 // correct one by it's mac address 
@@ -21,15 +21,15 @@ let desk: Idasen<impl Device> = get_instance()?;
 // let desk = get_instance_by_mac("EC:86:F6:44:D3:31")?;
 
 // move desk up and down
-desk.up();
-desk.down();
+desk.up().await;
+desk.down().await;
 
 // stop desk from moving
-desk.stop();
+desk.stop().await;
 
 // move desk to desired position: 
 //  minimum: 6200 (62cm), maximum: 12700 (1.27m)
-desk.move_to(7400);
+desk.move_to(7400).await;
 
 // get the position as an integer (10 = 1mm)
 println!("Position: {}", desk.position()?);
